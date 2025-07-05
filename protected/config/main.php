@@ -8,6 +8,7 @@
 return [
     'basePath' => dirname(__FILE__) . DIRECTORY_SEPARATOR . '..',
     'name' => 'ToDo test app',
+    'language' => 'ru',
 
     // preloading 'log' component
     'preload' => ['log'],
@@ -39,23 +40,24 @@ return [
         ],
 
         // uncomment the following to enable URLs in path-format
-        /*
-        'urlManager'=>array(
-            'urlFormat'=>'path',
-            'rules'=>array(
-                '<controller:\w+>/<id:\d+>'=>'<controller>/view',
-                '<controller:\w+>/<action:\w+>/<id:\d+>'=>'<controller>/<action>',
-                '<controller:\w+>/<action:\w+>'=>'<controller>/<action>',
-            ),
-        ),
-        */
+        'urlManager' => [
+            'urlFormat' => 'path',
+            'rules' => [
+                'api/list' => 'api/list',
+                'api/create' => 'api/create',
+
+                '<controller:\w+>/<id:\d+>' => '<controller>/view',
+                '<controller:\w+>/<action:\w+>/<id:\d+>' => '<controller>/<action>',
+                '<controller:\w+>/<action:\w+>' => '<controller>/<action>',
+            ],
+        ],
 
         // database settings are configured in database.php
         'db' => require(dirname(__FILE__) . '/database.php'),
 
         'errorHandler' => [
-            // use 'site/error' action to display errors
-            'errorAction' => YII_DEBUG ? null : 'site/error',
+            'class' => 'ApiErrorHandler',
+            'errorAction' => 'api/error',
         ],
 
         'log' => [
