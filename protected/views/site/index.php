@@ -41,10 +41,46 @@
           align-items: center;
       }
 
-      li.done {
+      li.done .task-title {
           text-decoration: line-through;
           color: #888;
-          background-color: #f0f0f0;
+      }
+
+      li.done {
+          background-color: #f0f0f0; /* Например, только изменение фона */
+      }
+
+
+      .task-title {
+          flex-grow: 1;
+          cursor: pointer;
+          padding-right: 10px;
+      }
+
+      .task-actions {
+          display: flex;
+          gap: 5px;
+      }
+
+      .delete-btn {
+          background-color: #dc3545;
+          color: white;
+          border: none;
+          padding: 8px 12px;
+          border-radius: 4px;
+          cursor: pointer;
+          opacity: 0;
+          transition: opacity 0.2s ease-in-out;
+          /* Убедимся, что для кнопки нет перечеркивания */
+          text-decoration: none !important; /* На всякий случай, если что-то другое наследуется */
+      }
+
+      li:hover .delete-btn {
+          opacity: 1;
+      }
+
+      .delete-btn:hover {
+          background-color: #c82333;
       }
 
       .add-form {
@@ -123,7 +159,11 @@
 
   <ul v-if="tasks.length">
     <li v-for="task in tasks" :key="task.id" :class="{ done: task.is_done }">
-      {{ task.title }}
+      <span class="task-title" @click="toggleTaskStatus(task)">{{ task.title }}</span>
+      <div class="task-actions">
+        <button class="delete-btn" @click="deleteTask(task.id)" :disabled="isLoading">Удалить
+        </button>
+      </div>
     </li>
   </ul>
   <p v-else-if="!isLoading">Задач пока нет! Добавьте первую.</p>
@@ -137,8 +177,8 @@
       tasks: [],
       newTaskTitle: '',
       error: null,
-      details: {}, // Добавляем объект для деталей ошибок валидации
-      isLoading: false, // Флаг для отслеживания состояния загрузки
+      details: {},
+      isLoading: false,
 
       apiUrl: '/api'
     },
@@ -152,10 +192,9 @@
        * @returns {Promise<any>}
        */
       async callApi(endpoint, method, data = null) {
-        // Если уже идет загрузка, игнорируем новый запрос и выходим
         if (this.isLoading) {
           console.warn('Запрос игнорирован: уже идет загрузка.');
-          throw new Error('Уже идет загрузка. Пожалуйста, подождите.');
+          return;
         }
 
         this.isLoading = true;
@@ -179,17 +218,22 @@
 
           if (!response.ok) {
             const errorData = await response.json();
-            const err = new Error(errorData.error || `Ошибка ${response.status}`);
-            err.details = errorData.details;
+            // Используем errorData.message для сообщения об ошибке
+            const err = new Error(errorData.message || `Ошибка ${response.status}`);
+            err.details = errorData.details; // Передаем детали ошибок
             throw err;
+          }
+
+          if (response.status === 204 || response.headers.get('Content-Length') === '0') {
+            return null; // Нет содержимого
           }
 
           return await response.json();
         } catch (error) {
           console.error(`Ошибка при вызове API (${method} ${endpoint}):`, error);
           this.error = `Ошибка: ${error.message}`;
-          this.details = error.details || {};
-          throw error;
+          this.details = error.details || {}; // Устанавливаем детали ошибок
+          throw error; // Перебрасываем ошибку для дальнейшей обработки
         } finally {
           this.isLoading = false; // Снимаем флаг загрузки
         }
@@ -199,27 +243,65 @@
       async fetchTasks() {
         try {
           const data = await this.callApi('/list', 'GET');
-          this.tasks = data;
+          if (data) { // Проверяем, что данные не null
+            this.tasks = data;
+          }
         } catch (err) {
-          this.tasks = []; // Очищаем список при ошибке загрузки
+          this.tasks = [];
         }
       },
 
+      // Добавление задачи
       async addTask() {
         if (!this.newTaskTitle.trim()) {
           this.error = 'Введите Название задачи';
-          this.details = {};
+          this.details = {title: ['Название задачи не может быть пустым.']}; // Пример деталей
           return;
         }
 
-        const newTask = await this.callApi('/create', 'POST', {title: this.newTaskTitle});
-        this.tasks.unshift(newTask);
-        this.newTaskTitle = '';
+        try {
+          const newTask = await this.callApi('/create', 'POST', {title: this.newTaskTitle});
+          if (newTask) { // Проверяем, что задача создана
+            this.tasks.unshift(newTask); // Добавляем новую задачу в начало списка
+            this.newTaskTitle = ''; // Очищаем поле ввода
+          }
+        } catch (err) {
+          // Ошибка уже будет отображена через this.error в callApi
+        }
       },
 
+      // Удаление задачи
+      async deleteTask(taskId) {
+        if (!confirm('Вы уверены, что хотите удалить эту задачу?')) {
+          return;
+        }
+
+        try {
+          // 204 No Content при успешном удалении
+          await this.callApi(`/delete/${taskId}`, 'DELETE');
+          // Удаляем задачу из списка Vue, фильтруя по ID
+          this.tasks = this.tasks.filter(task => task.id !== taskId);
+        } catch (err) {
+        }
+      },
+
+      // Смена статуса
+      async toggleTaskStatus(task) {
+        try {
+          const updatedTask = await this.callApi(`/update/${task.id}`, 'PUT', {is_done: !task.is_done});
+
+          if (updatedTask && updatedTask.id === task.id) {
+            Vue.set(task, 'is_done', updatedTask.is_done);
+          } else {
+            console.warn('API не вернул обновленную задачу. Перезагружаем список.');
+            await this.fetchTasks();
+          }
+        } catch (err) {
+        }
+      }
     },
     mounted() {
-      this.fetchTasks(); // Загружаем задачи
+      this.fetchTasks(); // Загружаем задачи при монтировании компонента
     }
   });
 </script>
